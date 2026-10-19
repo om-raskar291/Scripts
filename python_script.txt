@@ -1,0 +1,6 @@
+
+jupyter notebook --ip 0.0.0.0 --port 8888 --no-browser
+Password - Pass@1234
+
+Python.exe -m http.server 8000 --directory "C:\Users\om020\Desktop\TestingScript"
+Python.exe -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501

@@ -1,0 +1,143 @@
+# 1. Define your custom named devices
+$knownDevices = @{
+    "192.168.1.39" = "VivoBook"
+    "192.168.1.35" = "PocoM2"
+    "192.168.1.36" = "Nihal Redmi"
+    #"192.168.1.41" = "SBI's HP"
+    #"192.168.1.42" = "Abhi's Samsung"
+    "192.168.1.34" = "Chutiya's Mobile"
+	#"192.168.1.37" = "Chutiya's Laptop"
+#"192.168.1.39" = "Vivobook"
+"192.168.1.40" = "Samsung M21"
+
+}
+
+# 2. Define the start and end IP range to scan
+$startIP = 32
+$endIP   = 50
+$subnet  = "192.168.1"
+
+# Dynamic Daily Log File Configuration
+$logDate = (Get-Date).ToString("ddMMyyyy")
+$logFileName = "${logDate}_DeviceMonitor.txt"
+$logPath = Join-Path -Path (Get-Location) -ChildPath $logFileName
+
+# Write session restart header
+$startTime = (Get-Date).ToString("dd-MM-yyyy HH:mm:ss")
+$sessionHeader = @"
+`r`n==========================================================================
+>>> NEW SCAN SESSION STARTED: $startTime (Range: $subnet.$startIP - $subnet.$endIP) <<<
+==========================================================================`r`n
+"@
+[System.IO.File]::AppendAllText($logPath, $sessionHeader)
+
+# Get local host adapter MAC for 192.168.1.33
+# $myLocalIP = "192.168.1.33"
+# $myLocalMAC = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -match 'Wi-Fi|Wireless' } | Select-Object -First 1).MacAddress
+
+# Old hardcoded lines:
+# $myLocalIP = "192.168.1.33"
+# $myLocalMAC = (Get-NetAdapter ...).MacAddress
+
+# Replace with dynamic detection:
+$wifiAdapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -match 'Wi-Fi|Wireless' } | Select-Object -First 1
+$myLocalMAC = $wifiAdapter.MacAddress
+$myLocalIP  = (Get-NetIPAddress -InterfaceIndex $wifiAdapter.InterfaceIndex -AddressFamily IPv4).IPAddress
+
+
+$pinger = New-Object System.Net.NetworkInformation.Ping
+
+Write-Host "Monitoring Active Online Devices ($subnet.$startIP - $subnet.$endIP)..." -ForegroundColor Cyan
+Write-Host "Session Started: $startTime | Logging to: $logPath" -ForegroundColor Yellow
+Write-Host "=========================================================================="
+
+while ($true) {
+    # Auto-handle midnight rollover to new daily file
+    $currentDate = (Get-Date).ToString("ddMMyyyy")
+    if ($currentDate -ne $logDate) {
+        $logDate = $currentDate
+        $logFileName = "${logDate}_DeviceMonitor.txt"
+        $logPath = Join-Path -Path (Get-Location) -ChildPath $logFileName
+    }
+
+    $dateTime = (Get-Date).ToString("dd-MM-yyyy HH:mm:ss")
+    $onlineCount = 0
+    $logBatch = [System.Text.StringBuilder]::new()
+
+    for ($i = $startIP; $i -le $endIP; $i++) {
+        $ip = "$subnet.$i"
+        $name = $knownDevices[$ip]
+
+        # 1. Send Ping Probe
+        try {
+            $reply = $pinger.Send($ip, 120)
+            $pingSuccess = ($reply.Status -eq 'Success')
+            $pingMs = $reply.RoundtripTime
+        } catch {
+            $pingSuccess = $false
+        }
+
+        # 2. Query ARP Neighbor Table
+        if ($ip -eq $myLocalIP) {
+            $macAddress = $myLocalMAC
+            $isOnline = $true
+            $pingSuccess = $true
+            $pingMs = 0
+        } else {
+            $neighbor = Get-NetNeighbor -IPAddress $ip -ErrorAction SilentlyContinue | 
+                        Where-Object { 
+                            $_.LinkLayerAddress -and 
+                            $_.LinkLayerAddress -ne '00-00-00-00-00-00' -and 
+                            $_.State -notin @('Unreachable', 'Permanent') 
+                        }
+            
+            $macAddress = if ($neighbor) { $neighbor.LinkLayerAddress } else { $null }
+            $isOnline = $pingSuccess -or ($macAddress -and $macAddress -ne '00-00-00-00-00-00')
+        }
+
+        if ($isOnline) {
+            $onlineCount++
+
+            # Terminal Output
+            Write-Host "[$dateTime] " -NoNewline
+
+            $label = if ($name) { "$name ($ip)" } else { "$ip" }
+            $color = if ($name) { "Cyan" } else { "Gray" }
+            Write-Host $label -ForegroundColor $color -NoNewline
+
+            if ($macAddress) {
+                Write-Host " [MAC: $macAddress]" -ForegroundColor Magenta -NoNewline
+            }
+
+            $macTag = if ($macAddress) { " [MAC: $macAddress]" } else { "" }
+
+            if ($pingSuccess) {
+                Write-Host " -> ONLINE (Ping: ${pingMs}ms)" -ForegroundColor Green
+                $statusText = "ONLINE (Ping: ${pingMs}ms)"
+            } else {
+                Write-Host " -> ONLINE (Idle / Standby)" -ForegroundColor Yellow
+                $statusText = "ONLINE (Idle / Standby)"
+            }
+
+            # Prepare entry for file append
+            [void]$logBatch.AppendLine("[$dateTime] $label$macTag -> $statusText")
+        }
+    }
+
+    if ($onlineCount -eq 0) {
+        Write-Host "[$dateTime] No active devices online in range." -ForegroundColor DarkGray
+        [void]$logBatch.AppendLine("[$dateTime] No active devices online in range.")
+    }
+
+    # Add cycle separator line to both console and text file
+    $divider = "--------------------------------------------------------------------------"
+    Write-Host $divider -ForegroundColor DarkGray
+    [void]$logBatch.AppendLine($divider)
+
+    # Commit batch to text file
+    if ($logBatch.Length -gt 0) {
+        [System.IO.File]::AppendAllText($logPath, $logBatch.ToString())
+    }
+
+    Start-Sleep -Milliseconds 100
+}

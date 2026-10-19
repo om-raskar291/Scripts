@@ -1,0 +1,104 @@
+# Get active Wi-Fi or primary network interface directly from .NET (zero WMI overhead)
+$nic = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | 
+       Where-Object { $_.OperationalStatus -eq 'Up' -and $_.NetworkInterfaceType -match 'Wireless|Ethernet' } | 
+       Select-Object -First 1
+
+if (-not $nic) {
+    Write-Host "No active network interface found!" -ForegroundColor Red
+    return
+}
+
+$nicName = $nic.Name
+$maxRxBps = 0
+
+# 1. Define dynamic daily log file name: DDMMYYYY_NetworkSpeed.txt
+$logDate = (Get-Date).ToString("ddMMyyyy")
+$logFileName = "${logDate}_NetworkSpeed.txt"
+$logPath = Join-Path -Path (Get-Location) -ChildPath $logFileName
+
+# 2. Write a clean Session Header into the log on every script start/restart
+$startTime = (Get-Date).ToString("dd-MM-yyyy HH:mm:ss")
+$sessionHeader = @"
+`r`n==========================================================================
+>>> NEW MONITORING SESSION STARTED: $startTime on [$nicName] <<<
+==========================================================================`r`n
+"@
+[System.IO.File]::AppendAllText($logPath, $sessionHeader)
+
+Write-Host "High-Performance Speed Tracker on [$nicName]" -ForegroundColor Cyan
+Write-Host "Session Started: $startTime" -ForegroundColor Green
+Write-Host "Logging to: $logPath" -ForegroundColor Yellow
+Write-Host "=========================================================================="
+
+# Initial baseline readings
+$ipStats = $nic.GetIPStatistics()
+$prevRx = $ipStats.BytesReceived
+$prevTx = $ipStats.BytesSent
+$prevTime = [System.Diagnostics.Stopwatch]::StartNew()
+
+while ($true) {
+    Start-Sleep -Milliseconds 500
+
+    # Auto-handle midnight rollover to a new daily file
+    $currentDate = (Get-Date).ToString("ddMMyyyy")
+    if ($currentDate -ne $logDate) {
+        $logDate = $currentDate
+        $logFileName = "${logDate}_NetworkSpeed.txt"
+        $logPath = Join-Path -Path (Get-Location) -ChildPath $logFileName
+    }
+
+    # Fetch instant stats via low-level .NET API
+    $ipStats = $nic.GetIPStatistics()
+    $curRx = $ipStats.BytesReceived
+    $curTx = $ipStats.BytesSent
+    
+    $elapsedSeconds = $prevTime.Elapsed.TotalSeconds
+    $prevTime.Restart()
+
+    # Calculate real-time speed in Bytes/sec
+    $rxBps = ($curRx - $prevRx) / $elapsedSeconds
+    $txBps = ($curTx - $prevTx) / $elapsedSeconds
+
+    $prevRx = $curRx
+    $prevTx = $curTx
+
+    # Peak detection
+    $isNewPeak = $false
+    if ($rxBps -gt $maxRxBps) {
+        $maxRxBps = $rxBps
+        if ($maxRxBps -gt 100KB) {
+            $isNewPeak = $true
+        }
+    }
+
+    # Format human-readable strings
+    $dlSpeed = if ($rxBps -ge 1MB) { "{0:N2} MB/s" -f ($rxBps / 1MB) } else { "{0:N1} KB/s" -f ($rxBps / 1KB) }
+    $ulSpeed = if ($txBps -ge 1MB) { "{0:N2} MB/s" -f ($txBps / 1MB) } else { "{0:N1} KB/s" -f ($txBps / 1KB) }
+    $peakSpeed = if ($maxRxBps -ge 1MB) { "{0:N2} MB/s" -f ($maxRxBps / 1MB) } else { "{0:N1} KB/s" -f ($maxRxBps / 1KB) }
+
+    $dlColor = if ($rxBps -gt 2MB) { "Magenta" } else { "Green" }
+    $timestamp = (Get-Date).ToString("dd-MM-yyyy HH:mm:ss")
+
+    # Console Output
+    Write-Host "[$timestamp] " -NoNewline
+    Write-Host "Download: " -ForegroundColor Cyan -NoNewline
+    Write-Host "$dlSpeed" -ForegroundColor $dlColor -NoNewline
+    Write-Host " | " -NoNewline
+    Write-Host "Upload: " -ForegroundColor Cyan -NoNewline
+    Write-Host "$ulSpeed" -ForegroundColor Yellow -NoNewline
+    Write-Host " | " -NoNewline
+    Write-Host "Peak DL: " -ForegroundColor DarkGray -NoNewline
+    Write-Host "$peakSpeed" -ForegroundColor White -NoNewline
+
+    $peakText = ""
+    if ($isNewPeak) {
+        Write-Host "  <-- [NEW PEAK! 🔥]" -ForegroundColor Red
+        $peakText = "  <-- [NEW PEAK!]"
+    } else {
+        Write-Host ""
+    }
+
+    # Append entry to the daily text file
+    $logEntry = "[$timestamp] Download: $dlSpeed | Upload: $ulSpeed | Peak DL: $peakSpeed$peakText"
+    [System.IO.File]::AppendAllText($logPath, "$logEntry`r`n")
+}
