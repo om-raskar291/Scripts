@@ -3,12 +3,11 @@ jupyter notebook --ip 0.0.0.0 --port 8888 --no-browser
 Password - Pass@1234
 http://127.0.0.1:8888 	OR 	http://laptop_ip:8888
 
-
 Python.exe -m http.server 8000 --directory "C:\Users\om020\Desktop\TestingScript"
 http://127.0.0.1:8000 	OR 	http://laptop_ip:8000
 
 Python.exe -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
-http://laptop_ip:8501
+http://127.0.0.1:8501   OR  http://laptop_ip:8501
 
 Chk for ollama
 http://127.0.0.1:11434	OR 	http://laptop_ip:11434
