@@ -3,19 +3,39 @@ jupyter notebook --ip 0.0.0.0 --port 8888 --no-browser
 Password - Pass@1234
 http://127.0.0.1:8888 	OR 	http://laptop_ip:8888
 
-Python.exe -m http.server 8000 --directory "C:\Users\om020\Desktop\TestingScript"
+
+python.exe -m http.server 8000 --directory "C:\Users\om020\Desktop\TestingScript"
 http://127.0.0.1:8000 	OR 	http://laptop_ip:8000
 
-Python.exe -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
-http://127.0.0.1:8501   OR  http://laptop_ip:8501
+python.exe -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port 8501
+http://127.0.0.1:8501	OR	http://laptop_ip:8501
 
 Chk for ollama
 http://127.0.0.1:11434	OR 	http://laptop_ip:11434
 
+
 PowerShell cmds
+
 ollama --version
 ollama list
 ollama ps
 ollama run llama3.2:3b
+
+deepseek-r1:1.5b      e0979632db5a    1.1 GB    10 hours ago
+gemma4:e2b            b37049369adf    4.6 GB    10 hours ago
+qwen2.5-coder:1.5b    d7372fd82851    986 MB    11 hours ago
+llama3.2:3b       
+
 ollama stop llama3.2:3b
+
+
+cd..
+cd..
+cd Friday
+cd .venv
+cd Scripts
+.\Activate.ps1
+cd..
+cd..
+dir
 
